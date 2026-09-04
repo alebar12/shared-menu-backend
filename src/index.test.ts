@@ -13,9 +13,25 @@ function createFakeDatabase(initialValue?: string) {
     const meals: StoredMeal[] = [];
     const db = {
         prepare(query: string) {
-            if (query.startsWith("SELECT")) {
+            if (query.startsWith("SELECT VALUE FROM SEED")) {
                 return {
                     first: async () => (value === undefined ? null : { VALUE: value }),
+                };
+            }
+            if (query.startsWith("SELECT DAY AS day")) {
+                return {
+                    bind(menuId: string) {
+                        return {
+                            all: async () => ({
+                                results: meals
+                                    .filter(meal => meal.menuId === menuId)
+                                    .sort((firstMeal, secondMeal) =>
+                                        firstMeal.day.localeCompare(secondMeal.day),
+                                    )
+                                    .map(({ day, mealType, meal }) => ({ day, mealType, meal })),
+                            }),
+                        };
+                    },
                 };
             }
             return {
@@ -234,6 +250,75 @@ describe("/menuId", () => {
         });
     });
 
+    describe("GET /meals", () => {
+        it("returns only the specified menu's meals ordered by day", async () => {
+            const database = createFakeDatabase("correct-seed");
+            const firstMenuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                {
+                    DB: database.db,
+                } as Env,
+            );
+            const secondMenuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                {
+                    DB: database.db,
+                } as Env,
+            );
+            const { menuId } = (await firstMenuIdResponse.json()) as { menuId: string };
+            const { menuId: otherMenuId } = (await secondMenuIdResponse.json()) as {
+                menuId: string;
+            };
+
+            for (const [day, mealType, meal] of [
+                ["2026-09-05", "DINNER", "Risotto"],
+                ["2026-09-03", "LUNCH", "Pasta"],
+            ]) {
+                await worker.fetch(
+                    new Request("https://example.com/meals", {
+                        method: "POST",
+                        headers: { "x-menu-id": menuId },
+                        body: JSON.stringify({ day, mealType, meal }),
+                    }),
+                    { DB: database.db } as Env,
+                );
+            }
+            await worker.fetch(
+                new Request("https://example.com/meals", {
+                    method: "POST",
+                    headers: { "x-menu-id": otherMenuId },
+                    body: JSON.stringify({ day: "2026-09-01", mealType: "LUNCH", meal: "Pizza" }),
+                }),
+                { DB: database.db } as Env,
+            );
+
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    headers: { "x-menu-id": menuId },
+                }),
+                { DB: database.db } as Env,
+            );
+
+            expect(response.status).toBe(200);
+            await expect(response.json()).resolves.toEqual([
+                { day: "2026-09-03", mealType: "LUNCH", meal: "Pasta" },
+                { day: "2026-09-05", mealType: "DINNER", meal: "Risotto" },
+            ]);
+        });
+
+        it("returns 400 when x-menu-id is invalid", async () => {
+            const database = createFakeDatabase("correct-seed");
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    headers: { "x-menu-id": "invalid-menu-id" },
+                }),
+                { DB: database.db } as Env,
+            );
+
+            expect(response.status).toBe(400);
+        });
+    });
+
     it("rejects a menuId when verified with a different seed", async () => {
         const database = createFakeDatabase("correct-seed");
         const response = await worker.fetch(new Request("https://example.com/menuId"), {
@@ -262,9 +347,10 @@ describe("/menuId", () => {
             new Request("https://example.com/menuId", { method: "DELETE" }),
             { DB: database.db } as Env,
         );
-        const mealsResponse = await worker.fetch(new Request("https://example.com/meals"), {
-            DB: database.db,
-        } as Env);
+        const mealsResponse = await worker.fetch(
+            new Request("https://example.com/meals", { method: "DELETE" }),
+            { DB: database.db } as Env,
+        );
 
         expect(menuIdResponse.status).toBe(405);
         expect(mealsResponse.status).toBe(405);
