@@ -144,10 +144,6 @@ export default {
                 return handleGetMenuId(env.DB);
             }
 
-            return new Response("Method Not Allowed", { status: 405 });
-        }
-
-        if (pathname === "/verifyMenuId") {
             if (request.method === "POST") {
                 return handlePostMenuId(request, env.DB);
             }
