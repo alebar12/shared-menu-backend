@@ -8,6 +8,7 @@
 		"start": "wrangler dev",
 		"test": "vitest",
 		"cf-typegen": "wrangler types --include-runtime=false",
+		"format": "prettier --write \"src/**/*.ts\"",
 		"db:migration:create": "wrangler d1 migrations create shared-menu",
 		"db:migrations:list:local": "wrangler d1 migrations list shared-menu --local",
 		"db:migrations:list:remote": "wrangler d1 migrations list shared-menu --remote",
@@ -15,10 +16,11 @@
 		"db:migrations:apply:remote": "wrangler d1 migrations apply shared-menu --remote"
 	},
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.7.5",
-		"@cloudflare/workers-types": "^4.20250403.0",
-		"typescript": "^5.5.2",
-		"vitest": "~3.0.7",
-		"wrangler": "^4.7.0"
+		"@cloudflare/vitest-pool-workers": "^0.22.0",
+		"@cloudflare/workers-types": "^5.20260904.1",
+		"prettier": "^3.9.6",
+		"typescript": "^7.0.2",
+		"vitest": "^4.1.11",
+		"wrangler": "^4.129.0"
 	}
 }
