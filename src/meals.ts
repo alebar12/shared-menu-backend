@@ -48,3 +48,20 @@ export async function handlePostMeals(request: Request, db: D1Database): Promise
 
     return new Response(null, { status: 201 });
 }
+
+export async function handleGetMeals(request: Request, db: D1Database): Promise<Response> {
+    const menuId = request.headers.get("x-menu-id");
+    if (!menuId || !(await isMenuIdValid(db, menuId))) {
+        return new Response("Bad Request", { status: 400 });
+    }
+
+    const result = await db
+        .prepare(
+            "SELECT DAY AS day, MEAL_TYPE AS mealType, MEAL AS meal " +
+                "FROM MEALS WHERE MENU_ID = ? ORDER BY DAY ASC",
+        )
+        .bind(menuId)
+        .all<Meal>();
+
+    return Response.json(result.results);
+}

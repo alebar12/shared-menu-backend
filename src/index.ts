@@ -1,4 +1,4 @@
-import { handlePostMeals } from "./meals";
+import { handleGetMeals, handlePostMeals } from "./meals";
 import { handleGetMenuId, handlePostMenuId } from "./menu-id";
 
 export { assertMenuIdMatchesSeed, verifyMenuId } from "./menu-id";
@@ -20,6 +20,10 @@ export default {
         }
 
         if (pathname === "/meals") {
+            if (request.method === "GET") {
+                return handleGetMeals(request, env.DB);
+            }
+
             if (request.method === "POST") {
                 return handlePostMeals(request, env.DB);
             }
