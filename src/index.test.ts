@@ -1,8 +1,16 @@
 import { describe, expect, it } from "vitest";
 import worker, { assertMenuIdMatchesSeed, verifyMenuId } from "./index";
 
+type StoredMeal = {
+    menuId: string;
+    day: string;
+    mealType: string;
+    meal: string;
+};
+
 function createFakeDatabase(initialValue?: string) {
     let value = initialValue;
+    const meals: StoredMeal[] = [];
     const db = {
         prepare(query: string) {
             if (query.startsWith("SELECT")) {
@@ -11,10 +19,16 @@ function createFakeDatabase(initialValue?: string) {
                 };
             }
             return {
-                bind(candidate: string) {
+                bind(...values: string[]) {
                     return {
                         run: async () => {
-                            if (value === undefined) value = candidate;
+                            if (query.startsWith("INSERT INTO SEED") && value === undefined) {
+                                value = values[0];
+                            }
+                            if (query.startsWith("INSERT INTO MEALS")) {
+                                const [menuId, day, mealType, meal] = values;
+                                meals.push({ menuId, day, mealType, meal });
+                            }
                         },
                     };
                 },
@@ -22,7 +36,7 @@ function createFakeDatabase(initialValue?: string) {
         },
     } as unknown as D1Database;
 
-    return { db, getValue: () => value };
+    return { db, getValue: () => value, getMeals: () => meals };
 }
 
 describe("/menuId", () => {
@@ -58,7 +72,7 @@ describe("/menuId", () => {
         expect(database.getValue()).toBe(seed);
     });
 
-    describe("POST /verifyMenuId", () => {
+    describe("POST /menuId", () => {
         it("returns 200 when menuId was signed by the stored seed", async () => {
             const seed = "correct-seed";
             const database = createFakeDatabase(seed);
@@ -67,7 +81,7 @@ describe("/menuId", () => {
             } as Env);
             const { menuId } = (await createdResponse.json()) as { menuId: string };
             const response = await worker.fetch(
-                new Request("https://example.com/verifyMenuId", {
+                new Request("https://example.com/menuId", {
                     method: "POST",
                     body: JSON.stringify({ menuId }),
                 }),
@@ -80,14 +94,14 @@ describe("/menuId", () => {
         it("returns 400 for an invalid menuId or invalid JSON body", async () => {
             const database = createFakeDatabase("correct-seed");
             const invalidMenuIdResponse = await worker.fetch(
-                new Request("https://example.com/verifyMenuId", {
+                new Request("https://example.com/menuId", {
                     method: "POST",
                     body: JSON.stringify({ menuId: "not-a-valid-menu-id" }),
                 }),
                 { DB: database.db } as Env,
             );
             const invalidJsonResponse = await worker.fetch(
-                new Request("https://example.com/verifyMenuId", {
+                new Request("https://example.com/menuId", {
                     method: "POST",
                     body: "not-json",
                 }),
@@ -96,6 +110,77 @@ describe("/menuId", () => {
 
             expect(invalidMenuIdResponse.status).toBe(400);
             expect(invalidJsonResponse.status).toBe(400);
+        });
+    });
+
+    describe("POST /meals", () => {
+        it("stores a meal for a valid menuId received in x-menu-id", async () => {
+            const database = createFakeDatabase("correct-seed");
+            const menuIdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
+                DB: database.db,
+            } as Env);
+            const { menuId } = (await menuIdResponse.json()) as { menuId: string };
+
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    method: "POST",
+                    headers: { "x-menu-id": menuId },
+                    body: JSON.stringify({
+                        day: "2026-09-04",
+                        mealType: "LUNCH",
+                        meal: "Pasta al pomodoro",
+                    }),
+                }),
+                { DB: database.db } as Env,
+            );
+
+            expect(response.status).toBe(201);
+            expect(database.getMeals()).toEqual([
+                {
+                    menuId,
+                    day: "2026-09-04",
+                    mealType: "LUNCH",
+                    meal: "Pasta al pomodoro",
+                },
+            ]);
+        });
+
+        it("returns 400 and does not store a meal for invalid requests", async () => {
+            const database = createFakeDatabase("correct-seed");
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    method: "POST",
+                    headers: { "x-menu-id": "invalid-menu-id" },
+                    body: JSON.stringify({
+                        day: "2026-09-04",
+                        mealType: "BREAKFAST",
+                        meal: "Toast",
+                    }),
+                }),
+                { DB: database.db } as Env,
+            );
+
+            expect(response.status).toBe(400);
+            expect(database.getMeals()).toEqual([]);
+        });
+
+        it("returns 400 and does not store a meal when day is not YYYY-MM-DD", async () => {
+            const database = createFakeDatabase("correct-seed");
+            const menuIdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
+                DB: database.db,
+            } as Env);
+            const { menuId } = (await menuIdResponse.json()) as { menuId: string };
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    method: "POST",
+                    headers: { "x-menu-id": menuId },
+                    body: JSON.stringify({ day: "2026/09/04", mealType: "LUNCH", meal: "Toast" }),
+                }),
+                { DB: database.db } as Env,
+            );
+
+            expect(response.status).toBe(400);
+            expect(database.getMeals()).toEqual([]);
         });
     });
 
@@ -124,14 +209,14 @@ describe("/menuId", () => {
     it("returns 405 when a valid path is called with the wrong method", async () => {
         const database = createFakeDatabase("correct-seed");
         const menuIdResponse = await worker.fetch(
-            new Request("https://example.com/menuId", { method: "POST" }),
+            new Request("https://example.com/menuId", { method: "DELETE" }),
             { DB: database.db } as Env,
         );
-        const verifyResponse = await worker.fetch(new Request("https://example.com/verifyMenuId"), {
+        const mealsResponse = await worker.fetch(new Request("https://example.com/meals"), {
             DB: database.db,
         } as Env);
 
         expect(menuIdResponse.status).toBe(405);
-        expect(verifyResponse.status).toBe(405);
+        expect(mealsResponse.status).toBe(405);
     });
 });
