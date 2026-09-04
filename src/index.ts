@@ -1,4 +1,4 @@
-import { handleGetMeals, handlePostMeals } from "./meals";
+import { deleteMealsOlderThanSevenDays, handleGetMeals, handlePostMeals } from "./meals";
 import { handleGetMenuId, handlePostMenuId } from "./menu-id";
 
 export { assertMenuIdMatchesSeed, verifyMenuId } from "./menu-id";
@@ -32,5 +32,8 @@ export default {
         }
 
         return new Response("Not Found", { status: 404 });
+    },
+    async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+        ctx.waitUntil(deleteMealsOlderThanSevenDays(env.DB));
     },
 } satisfies ExportedHandler<Env>;

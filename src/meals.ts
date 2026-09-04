@@ -65,3 +65,7 @@ export async function handleGetMeals(request: Request, db: D1Database): Promise<
 
     return Response.json(result.results);
 }
+
+export async function deleteMealsOlderThanSevenDays(db: D1Database): Promise<void> {
+    await db.prepare("DELETE FROM MEALS WHERE DAY < date('now', '-7 days')").run();
+}

@@ -11,8 +11,10 @@ type StoredMeal = {
 function createFakeDatabase(initialValue?: string) {
     let value = initialValue;
     const meals: StoredMeal[] = [];
+    const queries: string[] = [];
     const db = {
         prepare(query: string) {
+            queries.push(query);
             if (query.startsWith("SELECT VALUE FROM SEED")) {
                 return {
                     first: async () => (value === undefined ? null : { VALUE: value }),
@@ -35,6 +37,7 @@ function createFakeDatabase(initialValue?: string) {
                 };
             }
             return {
+                run: async () => undefined,
                 bind(...values: string[]) {
                     return {
                         run: async () => {
@@ -62,7 +65,7 @@ function createFakeDatabase(initialValue?: string) {
         },
     } as unknown as D1Database;
 
-    return { db, getValue: () => value, getMeals: () => meals };
+    return { db, getValue: () => value, getMeals: () => meals, getQueries: () => queries };
 }
 
 describe("/menuId", () => {
@@ -317,6 +320,24 @@ describe("/menuId", () => {
 
             expect(response.status).toBe(400);
         });
+    });
+
+    it("deletes meals older than seven days when scheduled", async () => {
+        const database = createFakeDatabase("correct-seed");
+        let cleanup: Promise<unknown> | undefined;
+
+        await worker.scheduled(
+            {} as ScheduledController,
+            { DB: database.db } as Env,
+            {
+                waitUntil: promise => {
+                    cleanup = promise;
+                },
+            } as ExecutionContext,
+        );
+        await cleanup;
+
+        expect(database.getQueries()).toContain("DELETE FROM MEALS WHERE DAY < date('now', '-7 days')");
     });
 
     it("rejects a menuId when verified with a different seed", async () => {
