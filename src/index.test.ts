@@ -27,7 +27,17 @@ function createFakeDatabase(initialValue?: string) {
                             }
                             if (query.startsWith("INSERT INTO MEALS")) {
                                 const [menuId, day, mealType, meal] = values;
-                                meals.push({ menuId, day, mealType, meal });
+                                const existingMeal = meals.find(
+                                    storedMeal =>
+                                        storedMeal.menuId === menuId &&
+                                        storedMeal.day === day &&
+                                        storedMeal.mealType === mealType,
+                                );
+                                if (existingMeal) {
+                                    existingMeal.meal = meal;
+                                } else {
+                                    meals.push({ menuId, day, mealType, meal });
+                                }
                             }
                         },
                     };
@@ -142,6 +152,46 @@ describe("/menuId", () => {
                     mealType: "LUNCH",
                     meal: "Pasta al pomodoro",
                 },
+            ]);
+        });
+
+        it("updates meal when its menuId, day, and mealType already exist", async () => {
+            const database = createFakeDatabase("correct-seed");
+            const menuIdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
+                DB: database.db,
+            } as Env);
+            const { menuId } = (await menuIdResponse.json()) as { menuId: string };
+            const requestOptions = {
+                method: "POST",
+                headers: { "x-menu-id": menuId },
+            };
+
+            await worker.fetch(
+                new Request("https://example.com/meals", {
+                    ...requestOptions,
+                    body: JSON.stringify({
+                        day: "2026-09-04",
+                        mealType: "DINNER",
+                        meal: "Risotto",
+                    }),
+                }),
+                { DB: database.db } as Env,
+            );
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    ...requestOptions,
+                    body: JSON.stringify({
+                        day: "2026-09-04",
+                        mealType: "DINNER",
+                        meal: "Pizza",
+                    }),
+                }),
+                { DB: database.db } as Env,
+            );
+
+            expect(response.status).toBe(201);
+            expect(database.getMeals()).toEqual([
+                { menuId, day: "2026-09-04", mealType: "DINNER", meal: "Pizza" },
             ]);
         });
 

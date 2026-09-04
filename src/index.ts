@@ -174,7 +174,10 @@ async function handlePostMeals(request: Request, db: D1Database): Promise<Respon
     }
 
     await db
-        .prepare("INSERT INTO MEALS (MENU_ID, DAY, MEAL_TYPE, MEAL) VALUES (?, ?, ?, ?)")
+        .prepare(
+            "INSERT INTO MEALS (MENU_ID, DAY, MEAL_TYPE, MEAL) VALUES (?, ?, ?, ?) " +
+                "ON CONFLICT (MENU_ID, DAY, MEAL_TYPE) DO UPDATE SET MEAL = excluded.MEAL",
+        )
         .bind(menuId, meal.day, meal.mealType, meal.meal)
         .run();
 
