@@ -33,7 +33,11 @@ export default {
 
         return new Response("Not Found", { status: 404 });
     },
+
+
     async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+        console.log("Deleting old meals");
         ctx.waitUntil(deleteMealsOlderThanSevenDays(env.DB));
+        console.log("Old meals deleted");
     },
 } satisfies ExportedHandler<Env>;
