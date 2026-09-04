@@ -1,10 +1,17 @@
 const ALPHANUMERIC_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const DATE_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 const TEXT_ENCODER = new TextEncoder();
 
 type SeedRow = {
     VALUE: string;
+};
+
+type Meal = {
+    day: string;
+    mealType: "LUNCH" | "DINNER";
+    meal: string;
 };
 
 function createRandomValue(length: number): string {
@@ -116,6 +123,28 @@ async function readMenuIdFromBody(request: Request): Promise<string | null> {
     }
 }
 
+async function readMealFromBody(request: Request): Promise<Meal | null> {
+    try {
+        const body: unknown = await request.json();
+        if (
+            body === null ||
+            typeof body !== "object" ||
+            typeof (body as { day?: unknown }).day !== "string" ||
+            typeof (body as { mealType?: unknown }).mealType !== "string" ||
+            typeof (body as { meal?: unknown }).meal !== "string"
+        ) {
+            return null;
+        }
+
+        const { day, mealType, meal } = body as { day: string; mealType: string; meal: string };
+        if (!DATE_PATTERN.test(day) || (mealType !== "LUNCH" && mealType !== "DINNER")) return null;
+
+        return { day, mealType, meal };
+    } catch {
+        return null;
+    }
+}
+
 async function handleGetMenuId(db: D1Database): Promise<Response> {
     const seed = await getSeed(db);
     const menuId = await createMenuId(seed);
@@ -135,6 +164,23 @@ async function handlePostMenuId(request: Request, db: D1Database): Promise<Respo
     return new Response(null, { status: 200 });
 }
 
+async function handlePostMeals(request: Request, db: D1Database): Promise<Response> {
+    const menuId = request.headers.get("x-menu-id");
+    const meal = await readMealFromBody(request);
+    const seed = await readSeedValue(db);
+
+    if (!menuId || !meal || !seed || !(await verifyMenuId(menuId, seed.VALUE))) {
+        return new Response("Bad Request", { status: 400 });
+    }
+
+    await db
+        .prepare("INSERT INTO MEALS (MENU_ID, DAY, MEAL_TYPE, MEAL) VALUES (?, ?, ?, ?)")
+        .bind(menuId, meal.day, meal.mealType, meal.meal)
+        .run();
+
+    return new Response(null, { status: 201 });
+}
+
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         const { pathname } = new URL(request.url);
@@ -146,6 +192,14 @@ export default {
 
             if (request.method === "POST") {
                 return handlePostMenuId(request, env.DB);
+            }
+
+            return new Response("Method Not Allowed", { status: 405 });
+        }
+
+        if (pathname === "/meals") {
+            if (request.method === "POST") {
+                return handlePostMeals(request, env.DB);
             }
 
             return new Response("Method Not Allowed", { status: 405 });
