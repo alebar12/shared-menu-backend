@@ -2,9 +2,21 @@ import { errorResponse } from "./http-response";
 import { deleteMealsOlderThanSevenDays, handleGetMeals, handlePostMeals } from "./meals";
 import { handleGetMenuId, handlePostMenuId } from "./menu-id";
 
+const RATE_LIMIT_KEY = "shared-menu";
+
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         try {
+            const { success } = await env.REQUEST_RATE_LIMITER.limit({ key: RATE_LIMIT_KEY });
+            if (!success) {
+                return errorResponse(
+                    429,
+                    "RATE_LIMIT_EXCEEDED",
+                    "Too many requests. Please try again later.",
+                    { headers: { "Retry-After": "60" } },
+                );
+            }
+
             const { pathname } = new URL(request.url);
 
             if (pathname === "/menuId") {
