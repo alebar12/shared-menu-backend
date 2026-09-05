@@ -1,47 +1,6 @@
-const ALPHANUMERIC_CHARACTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const TEXT_ENCODER = new TextEncoder();
-
-type SeedRow = {
-    VALUE: string;
-};
-
-function createRandomValue(length: number): string {
-    let result = "";
-    const bytes = new Uint8Array(length);
-
-    while (result.length < length) {
-        crypto.getRandomValues(bytes);
-        for (const byte of bytes) {
-            if (byte < 248)
-                result += ALPHANUMERIC_CHARACTERS[byte % ALPHANUMERIC_CHARACTERS.length];
-            if (result.length === length) break;
-        }
-    }
-
-    return result;
-}
-
-async function readSeedValue(db: D1Database): Promise<SeedRow | null> {
-    return db.prepare("SELECT VALUE FROM SEED LIMIT 1").first<SeedRow>();
-}
-
-async function getSeed(db: D1Database): Promise<string> {
-    const existingSeed = await readSeedValue(db);
-    if (existingSeed) return existingSeed.VALUE;
-
-    const candidate = createRandomValue(64);
-    await db
-        .prepare("INSERT INTO SEED (VALUE) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM SEED)")
-        .bind(candidate)
-        .run();
-
-    const storedSeed = await readSeedValue(db);
-    if (!storedSeed) throw new Error("Unable to initialize SEED");
-
-    return storedSeed.VALUE;
-}
 
 function encodeBase64Url(value: ArrayBuffer): string {
     const binary = String.fromCharCode(...new Uint8Array(value));
@@ -98,9 +57,8 @@ export async function assertMenuIdMatchesSeed(menuId: string, seed: string): Pro
     }
 }
 
-export async function isMenuIdValid(db: D1Database, menuId: string): Promise<boolean> {
-    const seed = await readSeedValue(db);
-    return seed !== null && verifyMenuId(menuId, seed.VALUE);
+export async function isMenuIdValid(seed: string, menuId: string): Promise<boolean> {
+    return verifyMenuId(menuId, seed);
 }
 
 async function readMenuIdFromBody(request: Request): Promise<string | null> {
@@ -120,18 +78,17 @@ async function readMenuIdFromBody(request: Request): Promise<string | null> {
     }
 }
 
-export async function handleGetMenuId(db: D1Database): Promise<Response> {
-    const seed = await getSeed(db);
+export async function handleGetMenuId(seed: string): Promise<Response> {
     const menuId = await createMenuId(seed);
     await assertMenuIdMatchesSeed(menuId, seed);
 
     return Response.json({ menuId });
 }
 
-export async function handlePostMenuId(request: Request, db: D1Database): Promise<Response> {
+export async function handlePostMenuId(request: Request, seed: string): Promise<Response> {
     const menuId = await readMenuIdFromBody(request);
 
-    if (!menuId || !(await isMenuIdValid(db, menuId))) {
+    if (!menuId || !(await isMenuIdValid(seed, menuId))) {
         return new Response("Bad Request", { status: 400 });
     }
 

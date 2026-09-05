@@ -30,11 +30,15 @@ async function readMealFromBody(request: Request): Promise<Meal | null> {
     }
 }
 
-export async function handlePostMeals(request: Request, db: D1Database): Promise<Response> {
+export async function handlePostMeals(
+    request: Request,
+    db: D1Database,
+    seed: string,
+): Promise<Response> {
     const menuId = request.headers.get("x-menu-id");
     const meal = await readMealFromBody(request);
 
-    if (!menuId || !meal || !(await isMenuIdValid(db, menuId))) {
+    if (!menuId || !meal || !(await isMenuIdValid(seed, menuId))) {
         return new Response("Bad Request", { status: 400 });
     }
 
@@ -49,9 +53,13 @@ export async function handlePostMeals(request: Request, db: D1Database): Promise
     return new Response(null, { status: 201 });
 }
 
-export async function handleGetMeals(request: Request, db: D1Database): Promise<Response> {
+export async function handleGetMeals(
+    request: Request,
+    db: D1Database,
+    seed: string,
+): Promise<Response> {
     const menuId = request.headers.get("x-menu-id");
-    if (!menuId || !(await isMenuIdValid(db, menuId))) {
+    if (!menuId || !(await isMenuIdValid(seed, menuId))) {
         return new Response("Bad Request", { status: 400 });
     }
 
