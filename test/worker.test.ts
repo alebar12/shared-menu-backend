@@ -1,8 +1,36 @@
 import { describe, expect, it } from "vitest";
 import worker from "../src/index";
-import { createEnvironment, createFakeDatabase, expectError } from "./support";
+import {
+    createEnvironment,
+    createFakeDatabase,
+    createFakeRateLimiter,
+    expectError,
+} from "./support";
 
 describe("worker routing and scheduled work", () => {
+    it("limits the Worker to 100 requests per minute", async () => {
+        const database = createFakeDatabase();
+        const environment = createEnvironment(database.db, undefined, createFakeRateLimiter(100));
+
+        for (let requestCount = 0; requestCount < 100; requestCount++) {
+            const response = await worker.fetch(
+                new Request("https://example.com/other"),
+                environment,
+            );
+            expect(response.status).toBe(404);
+        }
+
+        const response = await worker.fetch(new Request("https://example.com/other"), environment);
+
+        await expectError(
+            response,
+            429,
+            "RATE_LIMIT_EXCEEDED",
+            "Too many requests. Please try again later.",
+        );
+        expect(response.headers.get("retry-after")).toBe("60");
+    });
+
     it("deletes meals older than seven days when scheduled", async () => {
         const database = createFakeDatabase();
         let cleanup: Promise<unknown> | undefined;

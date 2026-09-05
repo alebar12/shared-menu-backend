@@ -74,8 +74,20 @@ export function createFakeDatabase() {
     return { db, getMeals: () => meals, getQueries: () => queries };
 }
 
-export function createEnvironment(db: D1Database, seed = SEED): Env {
-    return { DB: db, SEED: seed };
+export function createFakeRateLimiter(limit = 100): RateLimit {
+    let requestCount = 0;
+
+    return {
+        limit: async () => ({ success: ++requestCount <= limit }),
+    } as RateLimit;
+}
+
+export function createEnvironment(
+    db: D1Database,
+    seed = SEED,
+    rateLimiter = createFakeRateLimiter(),
+): Env {
+    return { DB: db, SEED: seed, REQUEST_RATE_LIMITER: rateLimiter };
 }
 
 export async function createMenuId(db: D1Database, seed = SEED): Promise<string> {
