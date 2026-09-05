@@ -1,3 +1,5 @@
+import { errorResponse } from "./http-response";
+
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SIGNATURE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const TEXT_ENCODER = new TextEncoder();
@@ -88,8 +90,16 @@ export async function handleGetMenuId(seed: string): Promise<Response> {
 export async function handlePostMenuId(request: Request, seed: string): Promise<Response> {
     const menuId = await readMenuIdFromBody(request);
 
-    if (!menuId || !(await isMenuIdValid(seed, menuId))) {
-        return new Response("Bad Request", { status: 400 });
+    if (menuId === null) {
+        return errorResponse(
+            400,
+            "INVALID_MENU_ID_REQUEST",
+            "The request body must contain a menuId string.",
+        );
+    }
+
+    if (!(await isMenuIdValid(seed, menuId))) {
+        return errorResponse(401, "WRONG_MENU_ID", "The supplied menu ID is missing or invalid.");
     }
 
     return new Response(null, { status: 200 });
