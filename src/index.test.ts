@@ -10,6 +10,17 @@ type StoredMeal = {
 
 const SEED = "runtime-secret";
 
+async function expectError(
+    response: Response,
+    status: number,
+    code: string,
+    message: string,
+): Promise<void> {
+    expect(response.status).toBe(status);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    await expect(response.json()).resolves.toEqual({ error: { code, message } });
+}
+
 function createFakeDatabase() {
     const meals: StoredMeal[] = [];
     const queries: string[] = [];
@@ -117,7 +128,7 @@ describe("/menuId", () => {
             expect(response.status).toBe(200);
         });
 
-        it("returns 400 for an invalid menuId or invalid JSON body", async () => {
+        it("returns 401 for an invalid menuId", async () => {
             const database = createFakeDatabase();
             const invalidMenuIdResponse = await worker.fetch(
                 new Request("https://example.com/menuId", {
@@ -126,6 +137,17 @@ describe("/menuId", () => {
                 }),
                 createEnvironment(database.db),
             );
+
+            await expectError(
+                invalidMenuIdResponse,
+                401,
+                "WRONG_MENU_ID",
+                "The supplied menu ID is missing or invalid.",
+            );
+        });
+
+        it("returns 400 for an invalid JSON body", async () => {
+            const database = createFakeDatabase();
             const invalidJsonResponse = await worker.fetch(
                 new Request("https://example.com/menuId", {
                     method: "POST",
@@ -134,8 +156,12 @@ describe("/menuId", () => {
                 createEnvironment(database.db),
             );
 
-            expect(invalidMenuIdResponse.status).toBe(400);
-            expect(invalidJsonResponse.status).toBe(400);
+            await expectError(
+                invalidJsonResponse,
+                400,
+                "INVALID_MENU_ID_REQUEST",
+                "The request body must contain a menuId string.",
+            );
         });
     });
 
@@ -213,7 +239,7 @@ describe("/menuId", () => {
             ]);
         });
 
-        it("returns 400 and does not store a meal for invalid requests", async () => {
+        it("returns 401 and does not store a meal for an invalid menuId", async () => {
             const database = createFakeDatabase();
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
@@ -228,7 +254,36 @@ describe("/menuId", () => {
                 createEnvironment(database.db),
             );
 
-            expect(response.status).toBe(400);
+            await expectError(
+                response,
+                401,
+                "WRONG_MENU_ID",
+                "The supplied menu ID is missing or invalid.",
+            );
+            expect(database.getMeals()).toEqual([]);
+        });
+
+        it("returns 400 and does not store a meal for an invalid payload", async () => {
+            const database = createFakeDatabase();
+            const menuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                createEnvironment(database.db),
+            );
+            const { menuId } = (await menuIdResponse.json()) as { menuId: string };
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    method: "POST",
+                    headers: { "x-menu-id": menuId },
+                    body: JSON.stringify({
+                        day: "2026-09-04",
+                        mealType: "BREAKFAST",
+                        meal: "Toast",
+                    }),
+                }),
+                createEnvironment(database.db),
+            );
+
+            await expectError(response, 400, "INVALID_MEAL", "The meal payload is invalid.");
             expect(database.getMeals()).toEqual([]);
         });
 
@@ -248,7 +303,7 @@ describe("/menuId", () => {
                 createEnvironment(database.db),
             );
 
-            expect(response.status).toBe(400);
+            await expectError(response, 400, "INVALID_MEAL", "The meal payload is invalid.");
             expect(database.getMeals()).toEqual([]);
         });
     });
@@ -305,7 +360,7 @@ describe("/menuId", () => {
             ]);
         });
 
-        it("returns 400 when x-menu-id is invalid", async () => {
+        it("returns 401 when x-menu-id is invalid", async () => {
             const database = createFakeDatabase();
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
@@ -314,7 +369,33 @@ describe("/menuId", () => {
                 createEnvironment(database.db),
             );
 
-            expect(response.status).toBe(400);
+            await expectError(
+                response,
+                401,
+                "WRONG_MENU_ID",
+                "The supplied menu ID is missing or invalid.",
+            );
+        });
+
+        it("returns a safe 500 response when the database fails", async () => {
+            const database = {
+                prepare() {
+                    throw new Error("database connection failed");
+                },
+            } as unknown as D1Database;
+            const menuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                createEnvironment(database),
+            );
+            const { menuId } = (await menuIdResponse.json()) as { menuId: string };
+            const response = await worker.fetch(
+                new Request("https://example.com/meals", {
+                    headers: { "x-menu-id": menuId },
+                }),
+                createEnvironment(database),
+            );
+
+            await expectError(response, 500, "INTERNAL_ERROR", "An unexpected error occurred.");
         });
     });
 
@@ -355,7 +436,7 @@ describe("/menuId", () => {
             createEnvironment(database.db),
         );
 
-        expect(response.status).toBe(404);
+        await expectError(response, 404, "ROUTE_NOT_FOUND", "The requested route does not exist.");
     });
 
     it("returns 405 when a valid path is called with the wrong method", async () => {
@@ -369,7 +450,19 @@ describe("/menuId", () => {
             createEnvironment(database.db),
         );
 
-        expect(menuIdResponse.status).toBe(405);
-        expect(mealsResponse.status).toBe(405);
+        await expectError(
+            menuIdResponse,
+            405,
+            "METHOD_NOT_ALLOWED",
+            "The DELETE method is not allowed for /menuId.",
+        );
+        await expectError(
+            mealsResponse,
+            405,
+            "METHOD_NOT_ALLOWED",
+            "The DELETE method is not allowed for /meals.",
+        );
+        expect(menuIdResponse.headers.get("allow")).toBe("GET, POST");
+        expect(mealsResponse.headers.get("allow")).toBe("GET, POST");
     });
 });

@@ -1,3 +1,4 @@
+import { errorResponse } from "./http-response";
 import { isMenuIdValid } from "./menu-id";
 
 const DATE_PATTERN = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
@@ -36,11 +37,12 @@ export async function handlePostMeals(
     seed: string,
 ): Promise<Response> {
     const menuId = request.headers.get("x-menu-id");
-    const meal = await readMealFromBody(request);
-
-    if (!menuId || !meal || !(await isMenuIdValid(seed, menuId))) {
-        return new Response("Bad Request", { status: 400 });
+    if (!menuId || !(await isMenuIdValid(seed, menuId))) {
+        return errorResponse(401, "WRONG_MENU_ID", "The supplied menu ID is missing or invalid.");
     }
+
+    const meal = await readMealFromBody(request);
+    if (!meal) return errorResponse(400, "INVALID_MEAL", "The meal payload is invalid.");
 
     await db
         .prepare(
@@ -60,7 +62,7 @@ export async function handleGetMeals(
 ): Promise<Response> {
     const menuId = request.headers.get("x-menu-id");
     if (!menuId || !(await isMenuIdValid(seed, menuId))) {
-        return new Response("Bad Request", { status: 400 });
+        return errorResponse(401, "WRONG_MENU_ID", "The supplied menu ID is missing or invalid.");
     }
 
     const result = await db
