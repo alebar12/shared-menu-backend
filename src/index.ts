@@ -2,8 +2,6 @@ import { errorResponse } from "./http-response";
 import { deleteMealsOlderThanSevenDays, handleGetMeals, handlePostMeals } from "./meals";
 import { handleGetMenuId, handlePostMenuId } from "./menu-id";
 
-export { assertMenuIdMatchesSeed, verifyMenuId } from "./menu-id";
-
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         try {
