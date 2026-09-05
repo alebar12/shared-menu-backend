@@ -1,0 +1,3 @@
+-- Migration number: 0004 	 2026-09-05T11:41:30.747Z
+
+DROP TABLE SEED;

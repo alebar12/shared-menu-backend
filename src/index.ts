@@ -9,11 +9,11 @@ export default {
 
         if (pathname === "/menuId") {
             if (request.method === "GET") {
-                return handleGetMenuId(env.DB);
+                return handleGetMenuId(env.SEED);
             }
 
             if (request.method === "POST") {
-                return handlePostMenuId(request, env.DB);
+                return handlePostMenuId(request, env.SEED);
             }
 
             return new Response("Method Not Allowed", { status: 405 });
@@ -21,11 +21,11 @@ export default {
 
         if (pathname === "/meals") {
             if (request.method === "GET") {
-                return handleGetMeals(request, env.DB);
+                return handleGetMeals(request, env.DB, env.SEED);
             }
 
             if (request.method === "POST") {
-                return handlePostMeals(request, env.DB);
+                return handlePostMeals(request, env.DB, env.SEED);
             }
 
             return new Response("Method Not Allowed", { status: 405 });
@@ -34,8 +34,11 @@ export default {
         return new Response("Not Found", { status: 404 });
     },
 
-
-    async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    async scheduled(
+        _controller: ScheduledController,
+        env: Env,
+        ctx: ExecutionContext,
+    ): Promise<void> {
         console.log("Deleting old meals");
         ctx.waitUntil(deleteMealsOlderThanSevenDays(env.DB));
     },

@@ -8,18 +8,14 @@ type StoredMeal = {
     meal: string;
 };
 
-function createFakeDatabase(initialValue?: string) {
-    let value = initialValue;
+const SEED = "runtime-secret";
+
+function createFakeDatabase() {
     const meals: StoredMeal[] = [];
     const queries: string[] = [];
     const db = {
         prepare(query: string) {
             queries.push(query);
-            if (query.startsWith("SELECT VALUE FROM SEED")) {
-                return {
-                    first: async () => (value === undefined ? null : { VALUE: value }),
-                };
-            }
             if (query.startsWith("SELECT DAY AS day")) {
                 return {
                     bind(menuId: string) {
@@ -41,9 +37,6 @@ function createFakeDatabase(initialValue?: string) {
                 bind(...values: string[]) {
                     return {
                         run: async () => {
-                            if (query.startsWith("INSERT INTO SEED") && value === undefined) {
-                                value = values[0];
-                            }
                             if (query.startsWith("INSERT INTO MEALS")) {
                                 const [menuId, day, mealType, meal] = values;
                                 const existingMeal = meals.find(
@@ -65,76 +58,80 @@ function createFakeDatabase(initialValue?: string) {
         },
     } as unknown as D1Database;
 
-    return { db, getValue: () => value, getMeals: () => meals, getQueries: () => queries };
+    return { db, getMeals: () => meals, getQueries: () => queries };
+}
+
+function createEnvironment(db: D1Database, seed = SEED): Env {
+    return { DB: db, SEED: seed };
 }
 
 describe("/menuId", () => {
-    it("creates the seed and returns a signed menuId when SEED is empty", async () => {
+    it("returns a menuId signed by the runtime secret without querying D1 for a seed", async () => {
         const database = createFakeDatabase();
-        const response = await worker.fetch(new Request("https://example.com/menuId"), {
-            DB: database.db,
-        } as Env);
+        const response = await worker.fetch(
+            new Request("https://example.com/menuId"),
+            createEnvironment(database.db),
+        );
         const body = (await response.json()) as { menuId: string };
-        const seed = database.getValue();
 
         expect(response.status).toBe(200);
-        expect(seed).toMatch(/^[A-Za-z0-9]{64}$/);
         expect(body.menuId).toMatch(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/);
-        expect(await verifyMenuId(body.menuId, seed!)).toBe(true);
+        expect(await verifyMenuId(body.menuId, SEED)).toBe(true);
+        expect(database.getQueries().some(query => query.includes("SEED"))).toBe(false);
     });
 
-    it("returns different menuIds signed by the same stored seed", async () => {
-        const seed = "existing-seed";
-        const database = createFakeDatabase(seed);
-        const firstResponse = await worker.fetch(new Request("https://example.com/menuId"), {
-            DB: database.db,
-        } as Env);
-        const secondResponse = await worker.fetch(new Request("https://example.com/menuId"), {
-            DB: database.db,
-        } as Env);
+    it("returns different menuIds signed by the same runtime secret", async () => {
+        const database = createFakeDatabase();
+        const firstResponse = await worker.fetch(
+            new Request("https://example.com/menuId"),
+            createEnvironment(database.db),
+        );
+        const secondResponse = await worker.fetch(
+            new Request("https://example.com/menuId"),
+            createEnvironment(database.db),
+        );
         const firstBody = (await firstResponse.json()) as { menuId: string };
         const secondBody = (await secondResponse.json()) as { menuId: string };
 
         expect(firstBody.menuId).not.toBe(secondBody.menuId);
-        expect(await verifyMenuId(firstBody.menuId, seed)).toBe(true);
-        expect(await verifyMenuId(secondBody.menuId, seed)).toBe(true);
-        expect(database.getValue()).toBe(seed);
+        expect(await verifyMenuId(firstBody.menuId, SEED)).toBe(true);
+        expect(await verifyMenuId(secondBody.menuId, SEED)).toBe(true);
     });
 
     describe("POST /menuId", () => {
-        it("returns 200 when menuId was signed by the stored seed", async () => {
-            const seed = "correct-seed";
-            const database = createFakeDatabase(seed);
-            const createdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
-                DB: database.db,
-            } as Env);
+        it("returns 200 when menuId was signed by the runtime secret", async () => {
+            const database = createFakeDatabase();
+            const createdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                createEnvironment(database.db),
+            );
             const { menuId } = (await createdResponse.json()) as { menuId: string };
             const response = await worker.fetch(
                 new Request("https://example.com/menuId", {
                     method: "POST",
                     body: JSON.stringify({ menuId }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(200);
         });
 
         it("returns 400 for an invalid menuId or invalid JSON body", async () => {
-            const database = createFakeDatabase("correct-seed");
+            const database = createFakeDatabase();
             const invalidMenuIdResponse = await worker.fetch(
                 new Request("https://example.com/menuId", {
                     method: "POST",
                     body: JSON.stringify({ menuId: "not-a-valid-menu-id" }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
             const invalidJsonResponse = await worker.fetch(
                 new Request("https://example.com/menuId", {
                     method: "POST",
                     body: "not-json",
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(invalidMenuIdResponse.status).toBe(400);
@@ -144,10 +141,11 @@ describe("/menuId", () => {
 
     describe("POST /meals", () => {
         it("stores a meal for a valid menuId received in x-menu-id", async () => {
-            const database = createFakeDatabase("correct-seed");
-            const menuIdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
-                DB: database.db,
-            } as Env);
+            const database = createFakeDatabase();
+            const menuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                createEnvironment(database.db),
+            );
             const { menuId } = (await menuIdResponse.json()) as { menuId: string };
 
             const response = await worker.fetch(
@@ -160,7 +158,7 @@ describe("/menuId", () => {
                         meal: "Pasta al pomodoro",
                     }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(201);
@@ -175,10 +173,11 @@ describe("/menuId", () => {
         });
 
         it("updates meal when its menuId, day, and mealType already exist", async () => {
-            const database = createFakeDatabase("correct-seed");
-            const menuIdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
-                DB: database.db,
-            } as Env);
+            const database = createFakeDatabase();
+            const menuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                createEnvironment(database.db),
+            );
             const { menuId } = (await menuIdResponse.json()) as { menuId: string };
             const requestOptions = {
                 method: "POST",
@@ -194,7 +193,7 @@ describe("/menuId", () => {
                         meal: "Risotto",
                     }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
@@ -205,7 +204,7 @@ describe("/menuId", () => {
                         meal: "Pizza",
                     }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(201);
@@ -215,7 +214,7 @@ describe("/menuId", () => {
         });
 
         it("returns 400 and does not store a meal for invalid requests", async () => {
-            const database = createFakeDatabase("correct-seed");
+            const database = createFakeDatabase();
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
                     method: "POST",
@@ -226,7 +225,7 @@ describe("/menuId", () => {
                         meal: "Toast",
                     }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(400);
@@ -234,10 +233,11 @@ describe("/menuId", () => {
         });
 
         it("returns 400 and does not store a meal when day is not YYYY-MM-DD", async () => {
-            const database = createFakeDatabase("correct-seed");
-            const menuIdResponse = await worker.fetch(new Request("https://example.com/menuId"), {
-                DB: database.db,
-            } as Env);
+            const database = createFakeDatabase();
+            const menuIdResponse = await worker.fetch(
+                new Request("https://example.com/menuId"),
+                createEnvironment(database.db),
+            );
             const { menuId } = (await menuIdResponse.json()) as { menuId: string };
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
@@ -245,7 +245,7 @@ describe("/menuId", () => {
                     headers: { "x-menu-id": menuId },
                     body: JSON.stringify({ day: "2026/09/04", mealType: "LUNCH", meal: "Toast" }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(400);
@@ -255,18 +255,14 @@ describe("/menuId", () => {
 
     describe("GET /meals", () => {
         it("returns only the specified menu's meals ordered by day", async () => {
-            const database = createFakeDatabase("correct-seed");
+            const database = createFakeDatabase();
             const firstMenuIdResponse = await worker.fetch(
                 new Request("https://example.com/menuId"),
-                {
-                    DB: database.db,
-                } as Env,
+                createEnvironment(database.db),
             );
             const secondMenuIdResponse = await worker.fetch(
                 new Request("https://example.com/menuId"),
-                {
-                    DB: database.db,
-                } as Env,
+                createEnvironment(database.db),
             );
             const { menuId } = (await firstMenuIdResponse.json()) as { menuId: string };
             const { menuId: otherMenuId } = (await secondMenuIdResponse.json()) as {
@@ -283,7 +279,7 @@ describe("/menuId", () => {
                         headers: { "x-menu-id": menuId },
                         body: JSON.stringify({ day, mealType, meal }),
                     }),
-                    { DB: database.db } as Env,
+                    createEnvironment(database.db),
                 );
             }
             await worker.fetch(
@@ -292,14 +288,14 @@ describe("/menuId", () => {
                     headers: { "x-menu-id": otherMenuId },
                     body: JSON.stringify({ day: "2026-09-01", mealType: "LUNCH", meal: "Pizza" }),
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
                     headers: { "x-menu-id": menuId },
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(200);
@@ -310,12 +306,12 @@ describe("/menuId", () => {
         });
 
         it("returns 400 when x-menu-id is invalid", async () => {
-            const database = createFakeDatabase("correct-seed");
+            const database = createFakeDatabase();
             const response = await worker.fetch(
                 new Request("https://example.com/meals", {
                     headers: { "x-menu-id": "invalid-menu-id" },
                 }),
-                { DB: database.db } as Env,
+                createEnvironment(database.db),
             );
 
             expect(response.status).toBe(400);
@@ -323,28 +319,27 @@ describe("/menuId", () => {
     });
 
     it("deletes meals older than seven days when scheduled", async () => {
-        const database = createFakeDatabase("correct-seed");
+        const database = createFakeDatabase();
         let cleanup: Promise<unknown> | undefined;
 
-        await worker.scheduled(
-            {} as ScheduledController,
-            { DB: database.db } as Env,
-            {
-                waitUntil: promise => {
-                    cleanup = promise;
-                },
-            } as ExecutionContext,
-        );
+        await worker.scheduled({} as ScheduledController, createEnvironment(database.db), {
+            waitUntil: promise => {
+                cleanup = promise;
+            },
+        } as ExecutionContext);
         await cleanup;
 
-        expect(database.getQueries()).toContain("DELETE FROM MEALS WHERE DAY < date('now', '-7 days')");
+        expect(database.getQueries()).toContain(
+            "DELETE FROM MEALS WHERE DAY < date('now', '-7 days')",
+        );
     });
 
     it("rejects a menuId when verified with a different seed", async () => {
-        const database = createFakeDatabase("correct-seed");
-        const response = await worker.fetch(new Request("https://example.com/menuId"), {
-            DB: database.db,
-        } as Env);
+        const database = createFakeDatabase();
+        const response = await worker.fetch(
+            new Request("https://example.com/menuId"),
+            createEnvironment(database.db),
+        );
         const body = (await response.json()) as { menuId: string };
 
         expect(await verifyMenuId(body.menuId, "wrong-seed")).toBe(false);
@@ -355,22 +350,23 @@ describe("/menuId", () => {
 
     it("returns 404 for every other path", async () => {
         const database = createFakeDatabase();
-        const response = await worker.fetch(new Request("https://example.com/other"), {
-            DB: database.db,
-        } as Env);
+        const response = await worker.fetch(
+            new Request("https://example.com/other"),
+            createEnvironment(database.db),
+        );
 
         expect(response.status).toBe(404);
     });
 
     it("returns 405 when a valid path is called with the wrong method", async () => {
-        const database = createFakeDatabase("correct-seed");
+        const database = createFakeDatabase();
         const menuIdResponse = await worker.fetch(
             new Request("https://example.com/menuId", { method: "DELETE" }),
-            { DB: database.db } as Env,
+            createEnvironment(database.db),
         );
         const mealsResponse = await worker.fetch(
             new Request("https://example.com/meals", { method: "DELETE" }),
-            { DB: database.db } as Env,
+            createEnvironment(database.db),
         );
 
         expect(menuIdResponse.status).toBe(405);
