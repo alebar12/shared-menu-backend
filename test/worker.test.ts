@@ -80,7 +80,29 @@ describe("worker routing and scheduled work", () => {
             "METHOD_NOT_ALLOWED",
             "The DELETE method is not allowed for /meals.",
         );
-        expect(menuIdResponse.headers.get("allow")).toBe("GET, POST");
-        expect(mealsResponse.headers.get("allow")).toBe("GET, POST");
+        expect(menuIdResponse.headers.get("allow")).toBe("GET, POST, OPTIONS");
+        expect(mealsResponse.headers.get("allow")).toBe("GET, POST, OPTIONS");
+    });
+
+    it("allows CORS preflight requests", async () => {
+        const database = createFakeDatabase();
+        const response = await worker.fetch(
+            new Request("https://example.com/meals", {
+                method: "OPTIONS",
+                headers: {
+                    Origin: "https://frontend.example.com",
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "content-type, x-menu-id",
+                },
+            }),
+            createEnvironment(database.db),
+        );
+
+        expect(response.status).toBe(204);
+        expect(response.headers.get("access-control-allow-origin")).toBe("*");
+        expect(response.headers.get("access-control-allow-methods")).toBe("GET, POST, OPTIONS");
+        expect(response.headers.get("access-control-allow-headers")).toBe(
+            "Content-Type, X-Menu-Id",
+        );
     });
 });
