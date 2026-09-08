@@ -24,6 +24,58 @@ function initServices(env: Env) {
     return { menuService, mealService };
 }
 
+function initRouter(env: Env) {
+    const { menuService, mealService } = initServices(env);
+
+    return new Router([
+        new Route(
+            "/menuId",
+            "GET",
+            async () => undefined,
+            async () => Response.json({ menuId: await menuService.createMenuId() }),
+        ),
+
+        new Route<string>(
+            "/menuId",
+            "POST",
+            async request => {
+                const body = menuIdRequestSchema.parse(await request.json());
+                return body.menuId;
+            },
+            async menuId => {
+                await menuService.verifyMenuId(menuId);
+                return new Response(null, { status: 200 });
+            },
+        ),
+
+        new Route<string>(
+            "/meals",
+            "GET",
+            async request => request.headers.get("x-menu-id") ?? "",
+            async menuId => Response.json(await mealService.getMeals(menuId)),
+        ),
+
+        new Route<{
+            menuId: string;
+            meal: Meal;
+        }>(
+            "/meals",
+            "POST",
+            async request => {
+                const body = mealRequestSchema.parse(await request.json());
+                return {
+                    menuId: request.headers.get("x-menu-id") ?? "",
+                    meal: body,
+                };
+            },
+            async requestData => {
+                await mealService.addMeal(requestData.menuId, requestData.meal);
+                return new Response(null, { status: 201 });
+            },
+        ),
+    ]);
+}
+
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
         try {
@@ -39,56 +91,7 @@ export default {
                 );
             }
 
-            const { menuService, mealService } = initServices(env);
-
-            const router = new Router([
-                new Route(
-                    "/menuId",
-                    "GET",
-                    async request => undefined,
-                    async () => Response.json({ menuId: await menuService.createMenuId() }),
-                ),
-
-                new Route<string>(
-                    "/menuId",
-                    "POST",
-                    async request => {
-                        const body = menuIdRequestSchema.parse(await request.json());
-                        return body.menuId;
-                    },
-                    async menuId => {
-                        await menuService.verifyMenuId(menuId);
-                        return new Response(null, { status: 200 });
-                    },
-                ),
-
-                new Route<string>(
-                    "/meals",
-                    "GET",
-                    async request => request.headers.get("x-menu-id") ?? "",
-                    async menuId => Response.json(await mealService.getMeals(menuId)),
-                ),
-
-                new Route<{
-                    menuId: string;
-                    meal: Meal;
-                }>(
-                    "/meals",
-                    "POST",
-                    async request => {
-                        const body = mealRequestSchema.parse(await request.json());
-                        return {
-                            menuId: request.headers.get("x-menu-id") ?? "",
-                            meal: body,
-                        };
-                    },
-                    async requestData => {
-                        await mealService.addMeal(requestData.menuId, requestData.meal);
-                        return new Response(null, { status: 201 });
-                    },
-                ),
-            ]);
-
+            const router = initRouter(env);
             return withCors(await router.handle(request));
         } catch (error) {
             if (error instanceof InvalidMenuIdError) {
@@ -109,7 +112,7 @@ export default {
         ctx: ExecutionContext,
     ): Promise<void> {
         console.log("Deleting old meals");
-        const { menuService, mealService } = initServices(env);
+        const { mealService } = initServices(env);
         ctx.waitUntil(mealService.deleteMealsOlderThanSevenDays());
     },
 } satisfies ExportedHandler<Env>;
