@@ -3,7 +3,7 @@
     "version": "0.0.0",
     "private": true,
     "scripts": {
-        "deploy": "npm test -- --run && typecheck && wrangler d1 migrations apply shared-menu --remote && wrangler deploy",
+        "deploy": "npm test -- --run && npm run typecheck && wrangler d1 migrations apply shared-menu --remote && wrangler deploy",
         "dev": "wrangler dev",
         "start": "wrangler dev",
         "test": "vitest",
