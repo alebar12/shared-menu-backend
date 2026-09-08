@@ -8,6 +8,7 @@ export class Router {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, X-Menu-Id",
+        "Access-Control-Max-Age": "86400",
     };
 
     constructor(

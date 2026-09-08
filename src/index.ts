@@ -45,14 +45,14 @@ export default {
                 new Route(
                     "/menuId",
                     "GET",
-                    async () => undefined,
+                    async request => undefined,
                     async () => Response.json({ menuId: await menuService.createMenuId() }),
                 ),
 
                 new Route<string>(
                     "/menuId",
                     "POST",
-                    async () => {
+                    async request => {
                         const body = menuIdRequestSchema.parse(await request.json());
                         return body.menuId;
                     },
@@ -65,7 +65,7 @@ export default {
                 new Route<string>(
                     "/meals",
                     "GET",
-                    async () => request.headers.get("x-menu-id") ?? "",
+                    async request => request.headers.get("x-menu-id") ?? "",
                     async menuId => Response.json(await mealService.getMeals(menuId)),
                 ),
 

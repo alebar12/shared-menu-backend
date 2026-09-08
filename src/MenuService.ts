@@ -1,3 +1,4 @@
+import { isValid } from "zod/v3";
 import { errorResponse } from "./http-response";
 
 const HMAC_ALGORITHM = {
@@ -32,9 +33,12 @@ export class MenuService {
     }
 
     public async verifyMenuId(menuId: string): Promise<void> {
-        let isValid = false;
         const [uuid, encodedSignature, extraPart] = menuId.split(".");
+        if (!encodedSignature || extraPart !== undefined) {
+            throw new InvalidMenuIdError();
+        }
 
+        let isValid = false;
         const signature = this.decodeBase64Url(encodedSignature);
         if (signature) {
             const key = await this.key;
@@ -46,7 +50,7 @@ export class MenuService {
             );
         }
 
-        if (extraPart !== undefined || !isValid) {
+        if (!isValid) {
             throw new InvalidMenuIdError();
         }
     }
