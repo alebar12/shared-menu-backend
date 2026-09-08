@@ -73,14 +73,14 @@ describe("menu IDs", () => {
         );
     });
 
-    it("returns 500 for an invalid JSON body", async () => {
+    it("returns 400 for an invalid JSON body", async () => {
         const database = createFakeDatabase();
         const response = await worker.fetch(
             new Request("https://example.com/menuId", { method: "POST", body: "not-json" }),
             createEnvironment(database.db),
         );
 
-        await expectError(response, 500, "INTERNAL_ERROR", "An unexpected error occurred.");
+        await expectError(response, 400, "INVALID_REQUEST", "The request payload is invalid.");
     });
 
     it("rejects a menuId when verified with a different seed", async () => {

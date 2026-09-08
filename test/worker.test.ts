@@ -55,6 +55,7 @@ describe("worker routing and scheduled work", () => {
         );
 
         await expectError(response, 404, "ROUTE_NOT_FOUND", "The requested route does not exist.");
+        expect(response.headers.get("access-control-allow-origin")).toBe("*");
     });
 
     it("returns 405 with allowed methods for unsupported methods", async () => {
