@@ -1,7 +1,11 @@
 # Shared Menu Backend
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=fff)](#)
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare%20Workers-FF4A03?logo=Cloudflare-Workers&logoColor=white)](#)
+[![Node.js](https://img.shields.io/badge/Node.js-6DA55F?logo=node.js&logoColor=white)](#)
 
-Cloudflare Worker backend for creating shared menu identifiers and storing meals
-for each menu. The application runs on Cloudflare Workers and uses a Cloudflare
+Backend for the Flutter app avilable [here](https://github.com/alebar12/shared-menu).
+
+The application runs on Cloudflare Workers and uses a Cloudflare
 D1 database for persistence.
 
 ## Requirements
