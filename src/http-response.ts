@@ -1,6 +1,6 @@
 export type ApiErrorCode =
     | "INTERNAL_ERROR"
-    | "INVALID_MEAL"
+    | "INVALID_REQUEST"
     | "INVALID_MENU_ID_REQUEST"
     | "METHOD_NOT_ALLOWED"
     | "RATE_LIMIT_EXCEEDED"

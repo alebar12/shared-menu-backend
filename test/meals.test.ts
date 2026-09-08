@@ -53,7 +53,7 @@ describe("meals", () => {
         const database = createFakeDatabase();
         const response = await postMeal(database.db, "invalid-menu-id", {
             day: "2026-09-04",
-            mealType: "BREAKFAST",
+            mealType: "LUNCH",
             meal: "Toast",
         });
 
@@ -71,7 +71,20 @@ describe("meals", () => {
         const menuId = await createMenuId(database.db);
         const response = await postMeal(database.db, menuId, null);
 
-        await expectError(response, 400, "INVALID_MEAL", "The meal payload is invalid.");
+        await expectError(response, 400, "INVALID_REQUEST", "The request payload is invalid.");
+        expect(database.getMeals()).toEqual([]);
+    });
+
+    it("returns 400 and does not store a meal for an invalid meal payload", async () => {
+        const database = createFakeDatabase();
+        const menuId = await createMenuId(database.db);
+        const response = await postMeal(database.db, menuId, {
+            day: "not-a-date",
+            mealType: "LUNCH",
+            meal: "Toast",
+        });
+
+        await expectError(response, 400, "INVALID_REQUEST", "The request payload is invalid.");
         expect(database.getMeals()).toEqual([]);
     });
 
@@ -122,6 +135,29 @@ describe("meals", () => {
             "INVALID_MENU_ID_REQUEST",
             "The supplied menu ID is missing or invalid.",
         );
+    });
+
+    it("returns 401 when posting a meal without x-menu-id", async () => {
+        const database = createFakeDatabase();
+        const response = await worker.fetch(
+            new Request("https://example.com/meals", {
+                method: "POST",
+                body: JSON.stringify({
+                    day: "2026-09-04",
+                    mealType: "LUNCH",
+                    meal: "Toast",
+                }),
+            }),
+            createEnvironment(database.db),
+        );
+
+        await expectError(
+            response,
+            401,
+            "INVALID_MENU_ID_REQUEST",
+            "The supplied menu ID is missing or invalid.",
+        );
+        expect(database.getMeals()).toEqual([]);
     });
 
     it("returns a safe 500 response when the database fails", async () => {

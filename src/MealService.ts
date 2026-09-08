@@ -1,10 +1,6 @@
 import { MenuService } from "./MenuService";
+import { Meal } from "./Objects";
 
-export type Meal = {
-    day: string;
-    mealType: "LUNCH" | "DINNER";
-    meal: string;
-};
 
 export class MealService {
     constructor(

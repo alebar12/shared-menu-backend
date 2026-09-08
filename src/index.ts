@@ -1,6 +1,8 @@
+import z from "zod";
 import { errorResponse } from "./http-response";
-import { Meal, MealService } from "./MealService";
+import { MealService } from "./MealService";
 import { InvalidMenuIdError, MenuService } from "./MenuService";
+import { Meal, mealRequestSchema, menuIdRequestSchema } from "./Objects";
 import { Route, Router } from "./Router";
 
 const RATE_LIMIT_KEY = "shared-menu";
@@ -51,8 +53,8 @@ export default {
                     "/menuId",
                     "POST",
                     async () => {
-                        const body: unknown = await request.json();
-                        return (body as { menuId: string }).menuId;
+                        const body = menuIdRequestSchema.parse(await request.json());
+                        return body.menuId;
                     },
                     async menuId => {
                         await menuService.verifyMenuId(menuId);
@@ -69,26 +71,18 @@ export default {
 
                 new Route<{
                     menuId: string;
-                    meal?: Meal;
+                    meal: Meal;
                 }>(
                     "/meals",
                     "POST",
                     async request => {
-                        const body: unknown = await request.json();
+                        const body = mealRequestSchema.parse(await request.json());
                         return {
                             menuId: request.headers.get("x-menu-id") ?? "",
-                            meal: (body as Meal | null) ?? undefined,
+                            meal: body,
                         };
                     },
                     async requestData => {
-                        if (!requestData.meal) {
-                            return errorResponse(
-                                400,
-                                "INVALID_MEAL",
-                                "The meal payload is invalid.",
-                            );
-                        }
-
                         await mealService.addMeal(requestData.menuId, requestData.meal);
                         return new Response(null, { status: 201 });
                     },
@@ -99,6 +93,11 @@ export default {
         } catch (error) {
             if (error instanceof InvalidMenuIdError) {
                 return withCors(error.getErrorResponse());
+            }
+            if (error instanceof z.ZodError || error instanceof SyntaxError) {
+                return withCors(
+                    errorResponse(400, "INVALID_REQUEST", "The request payload is invalid."),
+                );
             }
             return withCors(errorResponse(500, "INTERNAL_ERROR", "An unexpected error occurred."));
         }
