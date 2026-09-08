@@ -80,8 +80,8 @@ describe("worker routing and scheduled work", () => {
             "METHOD_NOT_ALLOWED",
             "The DELETE method is not allowed for /meals.",
         );
-        expect(menuIdResponse.headers.get("allow")).toBe("GET, POST, OPTIONS");
-        expect(mealsResponse.headers.get("allow")).toBe("GET, POST, OPTIONS");
+        expect(menuIdResponse.headers.get("allow")).toBe("GET, POST");
+        expect(mealsResponse.headers.get("allow")).toBe("GET, POST");
     });
 
     it("allows CORS preflight requests", async () => {
