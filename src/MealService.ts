@@ -1,7 +1,6 @@
 import { MenuService } from "./MenuService";
 import { Meal } from "./Objects";
 
-
 export class MealService {
     constructor(
         private readonly db: D1Database,
