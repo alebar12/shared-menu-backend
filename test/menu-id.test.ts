@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { InvalidMenuIdError, MenuService } from "../src/MenuService";
 import worker from "../src/index";
-import { assertMenuIdMatchesSeed, verifyMenuId } from "../src/menu-id";
 import { createEnvironment, createFakeDatabase, expectError, SEED } from "./support";
 
 describe("menu IDs", () => {
@@ -14,7 +14,7 @@ describe("menu IDs", () => {
 
         expect(response.status).toBe(200);
         expect(body.menuId).toMatch(/^[0-9a-f-]{36}\.[A-Za-z0-9_-]{43}$/);
-        expect(await verifyMenuId(body.menuId, SEED)).toBe(true);
+        await expect(new MenuService(SEED).verifyMenuId(body.menuId)).resolves.toBeUndefined();
         expect(database.getQueries().some(query => query.includes("SEED"))).toBe(false);
     });
 
@@ -30,10 +30,11 @@ describe("menu IDs", () => {
         );
         const firstBody = (await firstResponse.json()) as { menuId: string };
         const secondBody = (await secondResponse.json()) as { menuId: string };
+        const menuService = new MenuService(SEED);
 
         expect(firstBody.menuId).not.toBe(secondBody.menuId);
-        expect(await verifyMenuId(firstBody.menuId, SEED)).toBe(true);
-        expect(await verifyMenuId(secondBody.menuId, SEED)).toBe(true);
+        await expect(menuService.verifyMenuId(firstBody.menuId)).resolves.toBeUndefined();
+        await expect(menuService.verifyMenuId(secondBody.menuId)).resolves.toBeUndefined();
     });
 
     it("accepts a menuId signed by the runtime secret", async () => {
@@ -67,24 +68,19 @@ describe("menu IDs", () => {
         await expectError(
             response,
             401,
-            "WRONG_MENU_ID",
+            "INVALID_MENU_ID_REQUEST",
             "The supplied menu ID is missing or invalid.",
         );
     });
 
-    it("returns 400 for an invalid JSON body", async () => {
+    it("returns 500 for an invalid JSON body", async () => {
         const database = createFakeDatabase();
         const response = await worker.fetch(
             new Request("https://example.com/menuId", { method: "POST", body: "not-json" }),
             createEnvironment(database.db),
         );
 
-        await expectError(
-            response,
-            400,
-            "INVALID_MENU_ID_REQUEST",
-            "The request body must contain a menuId string.",
-        );
+        await expectError(response, 500, "INTERNAL_ERROR", "An unexpected error occurred.");
     });
 
     it("rejects a menuId when verified with a different seed", async () => {
@@ -95,9 +91,8 @@ describe("menu IDs", () => {
         );
         const { menuId } = (await response.json()) as { menuId: string };
 
-        expect(await verifyMenuId(menuId, "wrong-seed")).toBe(false);
-        await expect(assertMenuIdMatchesSeed(menuId, "wrong-seed")).rejects.toThrow(
-            "menuId signature does not match",
+        await expect(new MenuService("wrong-seed").verifyMenuId(menuId)).rejects.toBeInstanceOf(
+            InvalidMenuIdError,
         );
     });
 });

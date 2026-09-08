@@ -1,17 +1,13 @@
 import { errorResponse } from "./http-response";
-import { deleteMealsOlderThanSevenDays, handleGetMeals, handlePostMeals } from "./meals";
-import { handleGetMenuId, handlePostMenuId } from "./menu-id";
+import { Meal, MealService } from "./MealService";
+import { InvalidMenuIdError, MenuService } from "./MenuService";
+import { Route, Router } from "./Router";
 
 const RATE_LIMIT_KEY = "shared-menu";
-const CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, X-Menu-Id",
-};
 
 function withCors(response: Response): Response {
     const headers = new Headers(response.headers);
-    for (const [name, value] of Object.entries(CORS_HEADERS)) headers.set(name, value);
+    for (const [name, value] of Object.entries(Router.CORS_HEADERS)) headers.set(name, value);
 
     return new Response(response.body, {
         status: response.status,
@@ -20,12 +16,14 @@ function withCors(response: Response): Response {
     });
 }
 
+function initServices(env: Env) {
+    const menuService = new MenuService(env.SEED);
+    const mealService = new MealService(env.DB, menuService);
+    return { menuService, mealService };
+}
+
 export default {
     async fetch(request: Request, env: Env): Promise<Response> {
-        if (request.method === "OPTIONS") {
-            return new Response(null, { status: 204, headers: CORS_HEADERS });
-        }
-
         try {
             const { success } = await env.REQUEST_RATE_LIMITER.limit({ key: RATE_LIMIT_KEY });
             if (!success) {
@@ -39,50 +37,69 @@ export default {
                 );
             }
 
-            const { pathname } = new URL(request.url);
+            const { menuService, mealService } = initServices(env);
 
-            if (pathname === "/menuId") {
-                if (request.method === "GET") {
-                    return withCors(await handleGetMenuId(env.SEED));
-                }
+            const router = new Router([
+                new Route(
+                    "/menuId",
+                    "GET",
+                    async () => undefined,
+                    async () => Response.json({ menuId: await menuService.createMenuId() }),
+                ),
 
-                if (request.method === "POST") {
-                    return withCors(await handlePostMenuId(request, env.SEED));
-                }
+                new Route<string>(
+                    "/menuId",
+                    "POST",
+                    async () => {
+                        const body: unknown = await request.json();
+                        return (body as { menuId: string }).menuId;
+                    },
+                    async menuId => {
+                        await menuService.verifyMenuId(menuId);
+                        return new Response(null, { status: 200 });
+                    },
+                ),
 
-                return withCors(
-                    errorResponse(
-                        405,
-                        "METHOD_NOT_ALLOWED",
-                        `The ${request.method} method is not allowed for ${pathname}.`,
-                        { headers: { Allow: "GET, POST, OPTIONS" } },
-                    ),
-                );
+                new Route<string>(
+                    "/meals",
+                    "GET",
+                    async () => request.headers.get("x-menu-id") ?? "",
+                    async menuId => Response.json(await mealService.getMeals(menuId)),
+                ),
+
+                new Route<{
+                    menuId: string;
+                    meal?: Meal;
+                }>(
+                    "/meals",
+                    "POST",
+                    async request => {
+                        const body: unknown = await request.json();
+                        return {
+                            menuId: request.headers.get("x-menu-id") ?? "",
+                            meal: (body as Meal | null) ?? undefined,
+                        };
+                    },
+                    async requestData => {
+                        if (!requestData.meal) {
+                            return errorResponse(
+                                400,
+                                "INVALID_MEAL",
+                                "The meal payload is invalid.",
+                            );
+                        }
+
+                        await mealService.addMeal(requestData.menuId, requestData.meal);
+                        return new Response(null, { status: 201 });
+                    },
+                ),
+            ]);
+
+            return withCors(await router.handle(request));
+        } catch (error) {
+            if (error instanceof InvalidMenuIdError) {
+                return withCors(error.getErrorResponse());
             }
-
-            if (pathname === "/meals") {
-                if (request.method === "GET") {
-                    return withCors(await handleGetMeals(request, env.DB, env.SEED));
-                }
-
-                if (request.method === "POST") {
-                    return withCors(await handlePostMeals(request, env.DB, env.SEED));
-                }
-
-                return withCors(
-                    errorResponse(
-                        405,
-                        "METHOD_NOT_ALLOWED",
-                        `The ${request.method} method is not allowed for ${pathname}.`,
-                        { headers: { Allow: "GET, POST, OPTIONS" } },
-                    ),
-                );
-            }
-
-            return withCors(
-                errorResponse(404, "ROUTE_NOT_FOUND", "The requested route does not exist."),
-            );
-        } catch {
             return withCors(errorResponse(500, "INTERNAL_ERROR", "An unexpected error occurred."));
         }
     },
@@ -93,6 +110,7 @@ export default {
         ctx: ExecutionContext,
     ): Promise<void> {
         console.log("Deleting old meals");
-        ctx.waitUntil(deleteMealsOlderThanSevenDays(env.DB));
+        const { menuService, mealService } = initServices(env);
+        ctx.waitUntil(mealService.deleteMealsOlderThanSevenDays());
     },
 } satisfies ExportedHandler<Env>;

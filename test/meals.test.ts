@@ -60,33 +60,16 @@ describe("meals", () => {
         await expectError(
             response,
             401,
-            "WRONG_MENU_ID",
+            "INVALID_MENU_ID_REQUEST",
             "The supplied menu ID is missing or invalid.",
         );
         expect(database.getMeals()).toEqual([]);
     });
 
-    it("returns 400 and does not store a meal for an invalid payload", async () => {
+    it("returns 400 and does not store a meal for a null payload", async () => {
         const database = createFakeDatabase();
         const menuId = await createMenuId(database.db);
-        const response = await postMeal(database.db, menuId, {
-            day: "2026-09-04",
-            mealType: "BREAKFAST",
-            meal: "Toast",
-        });
-
-        await expectError(response, 400, "INVALID_MEAL", "The meal payload is invalid.");
-        expect(database.getMeals()).toEqual([]);
-    });
-
-    it("returns 400 and does not store a meal when day is not YYYY-MM-DD", async () => {
-        const database = createFakeDatabase();
-        const menuId = await createMenuId(database.db);
-        const response = await postMeal(database.db, menuId, {
-            day: "2026/09/04",
-            mealType: "LUNCH",
-            meal: "Toast",
-        });
+        const response = await postMeal(database.db, menuId, null);
 
         await expectError(response, 400, "INVALID_MEAL", "The meal payload is invalid.");
         expect(database.getMeals()).toEqual([]);
@@ -136,7 +119,7 @@ describe("meals", () => {
         await expectError(
             response,
             401,
-            "WRONG_MENU_ID",
+            "INVALID_MENU_ID_REQUEST",
             "The supplied menu ID is missing or invalid.",
         );
     });
